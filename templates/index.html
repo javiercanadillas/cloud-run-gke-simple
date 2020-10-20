@@ -1,0 +1,21 @@
+{% import 'macros.html' as macros %}
+{% import 'bootstrap/wtf.html' as wtf %}
+{% extends "base.html" %}
+
+{% block title %}Cloud Run Demo{% endblock %}
+
+{% block  page_content %}
+<div class="page-header">
+    <h1>Hello, {% if name %}{{ name }}{% else %}Stranger{% endif %}!</h1>
+
+    <p>Called from {{ user_agent }} at {{ moment(current_time).format('LLL') }}.</p>
+    <p>Runtime information;</p>
+    <ul>
+        {% for key,value in host_info.items() %}
+        {{ macros.render_sysinfo(key, value) }}
+        {% endfor %}
+    </ul>
+    <p>Last updated {{ moment(current_time).fromNow(refresh=True) }}</p>
+</div>
+{{ wtf.quick_form(form) }}
+{% endblock  %}

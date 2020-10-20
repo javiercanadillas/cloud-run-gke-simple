@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -CeE
+set -o pipefail
+set -x
+
+if [[ "${BASH_VERSINFO:-0}" -lt 4 ]]; then
+  cat << EOF >&2
+WARNING: bash ${BASH_VERSION} does not support several modern safety features.
+This script was written with the latest POSIX standard in mind, and was only
+tested with modern shell standards. This script may not perform correctly in
+this environment.
+EOF
+  sleep 1
+else
+  set -u
+fi
+
+### File Related constants ###
+SCRIPT_NAME="${0##*/}"
+
+### Option variables ###
+PROJECT_ID="${PROJECT_ID:=}"
+CLUSTER_NAME="${CLUSTER_NAME:=}"
+ZONE="${ZONE:=}"
+
+# [START required_apis]
+required_apis() {
+    cat <<-EOF
+      container.googleapis.com
+      containerregistry.googleapis.com
+      cloudbuild.googleapis.com
+      compute.googleapis.com
+EOF
+}
+# [END required_apis]
+
+info() {
+  echo "${SCRIPT_NAME}: ${1}"
+}
+
+enable_gcloud_apis(){
+  info "Enabling required APIs..."
+  # shellcheck disable=SC2046
+  gcloud services enable --project="${PROJECT_ID}" $(required_apis | tr '\n' ' ')
+}
+
+get_enabled_apis() {
+  local OUTPUT
+  OUTPUT="$(gcloud services list \
+    --enabled \
+    --format='get(config.name)' \
+    --project="${PROJECT_ID}")"
+  echo "${OUTPUT}" | tr '\n' ','
+}
+
+arg_required() {
+  if [[ ! "${2:-}" || "${2:0:1}" = '-' ]]; then
+    fatal "Option ${1} requires an argument."
+  fi
+}
+
+create_public_cluster() {
+  gcloud container clusters create "${CLUSTER_NAME}"\
+    --release-channel=regular \
+    --addons=HttpLoadBalancing,CloudRun \
+    --machine-type=n1-standard-4 \
+    --enable-stackdriver-kubernetes \
+    --zone "${ZONE}"
+}
+
+set_gcloud() {
+  gcloud config set run/platform gke
+  gcloud config set project "${PROJECT_ID}"
+  gcloud config set compute/zone "${ZONE}"
+}
+
+post_set_gcloud() {
+  gcloud config set run/cluster "${CLUSTER_NAME}"
+  gcloud config set run/cluster_location "${ZONE}"
+}
+
+usage() {
+  cat << EOF
+usage: ${SCRIPT_NAME} [OPTION]...
+
+Set up, validate, and install Cloud Run on GKE in a Google Cloud environment.
+All options can also be passed via environment variables by using the ALL_CAPS
+name. Options specified via flags take precedence over environment variables.
+
+OPTIONS:
+  -z|--zone              <ZONE>       The GCP zone of the target cluster.
+  -n|--cluster_name      <NAME>       The name of the target cluster.
+  -p|--project_id        <ID>         The GCP project ID.
+EOF
+}
+
+parse_args() {
+  # shellcheck disable=SC2064
+  trap "$(shopt -p nocasematch)" RETURN
+  shopt -s nocasematch
+
+  while [[ $# != 0 ]]; do
+    case "${1}" in
+      -n | --cluster_name | --cluster-name)
+        arg_required "${@}"
+        CLUSTER_NAME="${2}"
+        shift 2
+        ;;
+      -p | --project_id | --project-id)
+        arg_required "${@}"
+        PROJECT_ID="${2}"
+        shift 2
+        ;;
+      -z | --zone)
+        arg_required "${@}"
+        ZONE="${2}"
+        shift 2
+        ;;
+      -h | --help)
+        usage
+        exit
+        ;;
+      *)
+        fatal_with_usage "Unknown option ${1}"
+        ;;
+    esac
+  done
+}
+
+main() {
+  parse_args "${@}"
+  set_gcloud
+  enable_gcloud_apis
+  create_public_cluster
+  post_set_gcloud
+}
+
+main "${@}"
+set +x

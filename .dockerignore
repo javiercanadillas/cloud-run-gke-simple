@@ -1,0 +1,11 @@
+venv/
+config
+README.md
+cloudbuild*
+setup_cloud_run_gke
+Dockerfile
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+.pytest_cache
